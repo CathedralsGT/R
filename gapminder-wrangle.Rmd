@@ -1,0 +1,155 @@
+---
+title: "gapminder-wrangle"
+author: "Qiyao Jiang"
+date: "2025-06-28"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Ways to Analyze Long format data
+
+## Step1: Prepare your package
+
+We introduce package "tidyverse", a strong package for data processing.
+
+```{r load_library}
+library(tidyverse)
+```
+
+## Step2: Prepare your data
+
+We read the data using readr::read_csv("readr::" can be omitted if we have written "library(tidyverse)"), and use str(), names(), head(), tail() to have a first glimpse of our data. Here we use gapminder.csv for an example.
+
+```{r block_1}
+gapminder <- readr::read_csv("data/gapminder.csv")
+str(gapminder)
+names(gapminder)
+head(gapminder, 5)
+```
+
+## Step3: Data processsing
+
+### 1.filter(data=data, your_logical_expression(can have multiple expressions here), ...)
+
+This will select the rows that satisfy your conditions.
+
+```{r block_2}
+filter(gapminder, lifeExp<29)
+filter(gapminder, country %in% c("China", "Japan"))
+```
+
+### 2.group_by(), mutate(), summarize(), arrange() and pipe "\|\>"
+
+For more information, please refer to slides "wrangling.pdf", "grouping.pdf" & "Chapter4.pdf".
+
+```{r group_func}
+gapminder |>
+  filter(year==2002) |>
+  group_by(continent) |>
+  mutate(count_pop = sum(pop))
+
+gapminder |>
+  group_by(continent, year) |>
+  summarize(count_pop = sum(pop)) |>
+  ungroup()
+
+gapminder |>
+  group_by(continent, year) |>
+  summarize(gdp = sum(gdpPercap*pop)) |>
+  arrange(gdp, .by_group=FALSE)
+```
+
+This is another example of the workflow. Notice that you have to read .tsv files with readr::read.**tsv**, NOT readr::read.**csv**!
+
+```{r an_example}
+judgements <- readr::read_tsv("https://biostat2.uni.lu/practicals/data/judgments.tsv", show_col_types=FALSE)
+glimpse(judgements)
+names(judgements)
+```
+
+```{r}
+select(judgements, gender, age, condition) |>
+  arrange(age)
+
+
+new_judgements <- judgements |>
+  mutate(
+    mood_change = mood_post - mood_pre,
+    mood_change_norm = abs(mood_change / mean(mood_change, na.rm=TRUE))) |>
+  relocate(starts_with("mood")) |>
+  arrange(desc(mood_change_norm))
+head(new_judgements)
+mean(new_judgements$mood_change, na.rm=TRUE)
+```
+
+```{r}
+co2 = read_csv("data/co2.csv")
+head(co2, 10)
+names(co2)
+
+gap_2007 <- gapminder |>
+  filter(year==2007)
+dim(gap_2007)
+
+rj <- right_join(gap_2007, co2, by="country")
+rj
+```
+
+# Before Data Processing: CLEAN Your Data
+
+This is a terrible wide format data:
+
+```{r}
+gap_wide <- read_csv("data/gapminder_wide.csv")
+head(gap_wide)
+```
+
+We can use pivot_longer()(and pivot_wider() if we like) to transfer it into long format nice and neatly:
+
+```{r}
+gap_long <- gap_wide |>
+  pivot_longer(
+    cols = -c("continent", "country"),
+    names_to = c("Variable","Year"),
+    names_sep = "_",
+    values_to = "Value"
+  )  |>
+  pivot_wider(
+    names_from = Variable,
+    values_from = Value
+  ) |>
+  mutate(
+    Year = as.numeric(Year),
+    GDP = pop*gdpPercap
+  )
+head(gap_long)
+tail(gap_long)
+str(gap_long)
+```
+Then, we can plot our data! Remember what we have done in the last session about ggplot2?
+```{r plot_your_data}
+
+China_verses_Japan_and_America_df <- gap_long |>
+  filter(country %in% c("China", "Japan", "United States")) 
+China_verses_Japan_and_America_df
+
+ggplot(China_verses_Japan_and_America_df) +
+  geom_point(aes(x=Year, y=gdpPercap, color=country), alpha=0.7, size=2.5) +
+  geom_line(aes(x=Year, y=gdpPercap, color=country)) +
+  labs(x="Year", y="gdpPercap($)", title="GDP Per Cap of China, Japan and US") +
+  theme_bw() +
+  theme(legend.title = element_blank())
+
+ggplot(China_verses_Japan_and_America_df) +
+  geom_point(aes(x=Year, y=GDP, color=country), alpha=0.7, size=2.5) +
+  geom_line(aes(x=Year, y=GDP, color=country)) +
+  labs(x="Year", y="GDP($)", title="GDP of China, Japan and US") +
+  theme_bw() +
+  theme(legend.title = element_blank())
+
+```
