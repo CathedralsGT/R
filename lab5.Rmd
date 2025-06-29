@@ -1,0 +1,41 @@
+---
+title: "lab5"
+author: "Qiyao Jiang"
+date: "2025-06-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+factory_function <- function(cars.output=10, trucks.output=5) {
+  factory <- matrix(c(40,1,60,3),nrow=2,
+    dimnames=list(c("labor","steel"),c("cars","trucks"))
+  )
+  available <- c(1600, 70); names(available) <- rownames(factory)
+  slack <- c(8, 1)/5; names(slack) <- rownames(factory)
+  output <- c(cars.output, trucks.output); names(output) <- colnames(factory)
+  
+  passes <- 0
+  repeat{
+    passes <- passes + 1
+    needed <- factory %*% output; names(needed) <- rownames(factory)
+    if(all(needed <= available) && all(available - needed <= slack)) {
+      break()
+    }
+    if(all(needed > available)) {
+      output <- output*0.9
+      next()
+    }
+    if(all(needed < available)) {
+      output <- output*1.1
+      next()
+    }
+    output <- output * (1 + runif(length(output), min=-0.1, max=0.1))
+  }
+  return(list(product_output = output, resource_needed = needed, num_of_iter = passes))
+}
+factory_function(30, 20)
+```
