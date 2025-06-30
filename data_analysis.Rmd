@@ -1,0 +1,272 @@
+---
+title: "data_analysis"
+author: "Qiyao Jiang"
+date: "2025-06-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Import Library and Load Your Data
+
+```{r import_library}
+library(tidyverse)
+library(lubridate)
+library(MASS)
+data(birthwt)
+summary(birthwt)
+```
+
+# Data Preparation
+
+Before we delve into our analysis of the data, we might want to rename the cols of the data first, which could make things a lot easier for us later on.
+
+```{r data_preparation}
+colnames(birthwt)
+colnames(birthwt) <- c("birthwt.below.2500", "mother.age",
+"mother.weight", "race",
+"mother.smokes", "previous.prem.labor",
+"hypertension", "uterine.irr",
+"physician.visits", "birthwt.grams")
+colnames(birthwt)
+
+birthwt$race <- case_match(
+  birthwt$race,
+  1 ~ "White",
+  2 ~ "Black", 
+  3 ~ "Other"
+) |>
+  factor(levels=c("White", "Black", "Other"))
+birthwt$race[1:20]
+
+birthwt$mother.smokes <- case_match(
+  birthwt$mother.smokes,
+  0 ~ FALSE,
+  1 ~ TRUE
+)
+
+birthwt$uterine.irr <- case_match(
+  birthwt$uterine.irr,
+  0 ~ FALSE,
+  1 ~ TRUE
+)
+
+birthwt$hypertension <- case_match(
+  birthwt$hypertension,
+  0 ~ FALSE,
+  1 ~ TRUE
+)
+```
+
+# Data Visualization
+
+We will first try to visualize this data, and see if there's something interesting that we want to further investigate\~ The following graphs evaluate the relationship between:
+
+-   birth_num & race
+
+-   smoking habit of the mother & birth_wt
+
+-   mother's hypertension & birth_wt
+
+-   number of physician visits & birth_wt
+
+-   presence of uterine irritability & birth_wt
+
+-   mother's age & birth_wt
+
+-   mother's age & race
+
+```{r visualization}
+birthwt |>
+  ggplot(aes(x=race, fill=race)) +
+  geom_bar() +
+  labs(x="Race", y="Number of Birth", title="Birth number of different races", subtitle="Baystate Medical Center, Springfield, 1986") +
+  theme_bw()
+
+# We will mainly focus on this relation: smoking habit of the mother & the birth weight of the baby
+ggplot(birthwt, aes(y=birthwt.grams, x=mother.smokes, fill=mother.smokes)) +
+  geom_boxplot() +
+  labs(x="Mother's smoking habit", y="Baby's birth weight", title="Birth weight by mother's smoking habit", fill="smoking habit") +
+  theme_bw()
+
+ggplot(birthwt, aes(x=hypertension, y=birthwt.grams)) +
+  geom_boxplot()
+
+ggplot(birthwt, aes(x=uterine.irr, y=birthwt.grams)) +
+  geom_boxplot()
+
+ggplot(birthwt, aes(x=physician.visits, y=birthwt.grams)) +
+  geom_point()
+
+ggplot(birthwt, aes(x=mother.age, y=after_stat(density), color=race)) +
+  #facet_wrap(~race) +
+  geom_freqpoly(binwidth=1, size=0.75)
+
+birthwt |>
+  mutate(
+    mother_age_group = case_when(
+      mother.age <= 18 ~ "younger than 18",
+      mother.age > 18 & mother.age <= 27 ~ "18 ~ 27",
+      mother.age > 27 ~ "older than 27",
+      .default = NA_character_
+    ) 
+  ) |>
+  mutate(
+    mother_age_group = factor(
+      mother_age_group,
+      levels = c("younger than 18", "18 ~ 27", "older than 27")
+    )
+  ) -> birthwt
+ggplot(birthwt, aes(x=mother_age_group, y=birthwt.grams, fill=mother_age_group)) +
+  geom_boxplot() +
+  labs(x="Mother's age", y="Infant's birth weight", title="Infant's birth weight in different mother's age group", fill="group") +
+  theme_bw()
+
+ggplot(birthwt, aes(x=mother.age, y=birthwt.grams, color=race)) +
+  geom_point(alpha=0.7, size=3) +
+  labs(x="age of the mother", y="infant's birth weight", title="Relationship Between Mother's Age and Infant's Birth Weight", color="race") +
+  theme_bw()
+
+birthwt |>
+  group_by(race) |>
+  summarize(
+    proportion_under_18 = mean(mother.age < 18)
+  )
+```
+
+# Data Analysis -- Basic statistical testing
+
+## Example One: smoking habit vs infant's birth weight
+
+### method 1: t-test
+
+We first take a closer look at the relationship between smoking habits and birth weight by using t-test, which compares two group(differentiated by smoking habit) of mothers' baby's birth weight and see if there is a significant difference between them.
+
+```{r analysis_smoking_vs_birthwt}
+t.test(birthwt$birthwt.grams[birthwt$mother.smokes==TRUE],
+       birthwt$birthwt.grams[birthwt$mother.smokes==FALSE])
+```
+
+The following is a (somehow) detailed explanation of the output:
+
+1."Welch Two Sample t-test": this indicates that the code above has carried out the **Welch t-test**, which is different from the original student t-test as it doesn't treat the two variances as being equal.(Caption note: Gemini suggests that this approach is generally preferable to traditional t-test in real world data analysis.)
+
+2."t = -2.7299": this is the value of the calculated **t-statistic**, which quantifies the difference between the observed sample means related to the variability within the samples. A negative value (-2.7299) indicates that the mean of the first group (smoking mothers' babies) is lower than the mean of the second group (non-smoking mothers' babies). A larger absolute value of t suggests a greater difference between the group means, which is less likely to have occurred by random chance.
+
+3."df = 170.1": this is the **degrees of freedom** for the test, a higher df generally indicates a more reliable estimate
+
+4."p-value = 0.007003": THE most crucial result of this test! The p-value represents the **probability** of observing a sample mean difference as extreme as, or more extreme than, the one calculated, assuming that the null hypothesis is true(i.e. no significant difference between the two groups). A p-value of 0.007 suggests that the probability of having the observed data under the null hypothesis is only 0.7%. Given a predetermined significance level of alpha=0.05, this p-value is well below the threshold, leading us to reject the null hypothesis and conclude that there is **statistically significant evidence** of a difference between the two groups.
+
+5."Alternative hypothesis & 95% confidence interval": The alternative hypothesis represents the conclusion we adopt *if we reject the null hypothesis* — in this case, that there is a significant difference in average birth weights between the two groups. The 95% confidence interval indicates that we can be 95% confident that the true difference in mean birth weights (smoking **minus** non-smoking groups) lies between -78.57 grams and -488.98 grams. Since this interval is entirely below zero, it provides further evidence in favor of the alternative hypothesis, supporting the conclusion that maternal smoking is associated with lower infant birth weight.
+
+6."Sample estimates": These are the **calculated sample means** for the two groups being compared, with mean of x refers to the average infant birth weight of smoking mothers and mean of y refers to the average infant birth weight of non-smoking mothers.
+
+### method 2: linear regression
+
+We now use another approach to evaluate the difference of infant birth weight between the two groups--the lm() function, which use a simple linear regression to fit the data.
+
+```{r}
+linear.model.1 <- lm(birthwt.grams ~mother.smokes, data=birthwt)
+summary(linear.model.1)
+
+```
+
+As above, there's the explanation of the output:
+
+1."Residuals": These statistics describe the distribution of the residuals(the differences between observed and predicted birthwt.grams values). "Min" states that the *minimum* of **real_value - lm_pred** is -2062.9, and then "Max" can be easily understood( In case you don't know(like me), 1Q and 3Q represents the *1st Quartile* and the *3rd Quartile*). Notice that the median residual (34.3) is close to zero, suggesting that the model's predictions are, on average, unbiased(which is generally a good sign).
+
+2."Coefficients": This section provides the estimated parameters of the model, their statistical significance, and associated error measures.
+
+i.  (Intercept):
+
+    -   Estimate:3055.70:The estimated intercept of the model is 3055.70. Given that mother.smokes is a binary variable (likely coded 0 for non-smoker as the reference category), this value represents the predicted mean birth weight for babies born to non-smoking mothers.
+
+    -   Std. Error: The standard error of the intercept estimate.
+
+    -   t-value: The ratio of the intercept estimate to its standard error. It's used to test whether the intercept is significantly different from zero.
+
+    -   Pr(\>\|t\|): p-value, stands for the probability of having the predicted intercept value under the null assumption "The real intercept is zero"
+
+ii. mother.smokesTRUE(**this is the predictor variable row!** *you can view it as **slope*** ):
+
+    -   Estimate:Infants of smoking mothers are estimated to weigh 283.78 grams less on average than those of non-smokers.(*Or more generally, "y" would change "-283.78" if you change "x" for a standard deviations, here "x", the predictor variable, is mother.smokes*)
+
+    -   p-value(Pr(\>\|t\|)): The p-value (0.00867) is below the 1% significance level, indicating that the association between maternal smoking and reduced infant birth weight is statistically significant.(*Or more generally, stands for the significance of the difference between the coefficient of the predictor variable that we predict and the coefficient that the null hypothesis suggests:**0**. A p-value closer to zero means that we have more confidence to reject the null hypothesis.* )
+
+3."R_Squared": This is the coefficient of determination, which evaluates the proportion of the variance of the dependent variable that can be illustrated by the predictor variable in our linear model(for the example above, it's the smoking habit). A R_Square of 0 means **you cannot explain any of the variance in the dependent variable**, and a R_Square of 1 shows **an excellent explanation** by the predictor variable(however, if R2=1 really occurs, it often indicate some data issues). Take our data for example, R2 = 0.03 suggests that the smoking habit *only explains a rather small proportion* of the variation of infant birth weight, despite a significant difference is suggested by an extremely low p value of 0.008(less than 0.01).
+
+## Example Two: mother's age vs infant's birth weight
+
+Now we come to focus on another pair of variables: mother's age and infant's birth weight. Again, we use linear regression to simulate the relationship between the two variables.
+
+```{r}
+linear.model.2 <- lm(birthwt.grams ~ mother.age, birthwt)
+summary(linear.model.2)
+```
+
+So, what does this result tell us? Well, given a large p-value of mother.age's coefficient(p=0.216 \> alpha=0.05) and a R2 score really close to 0(0.008), we can draw the conclusion that mother's age, when considered as the sole predictor, does not appear to be a significant factor in explaining the variance of the infant's birth weight, though we have to keep in mind that this conclusion only holds for this simple linear model, and a more complex model(which may take more predictors into consideration) might reveal different insights.
+
+# Data Analysis -- Detecting Outliers
+
+You might have noticed that there's an outlier in the graph depicting the relationship between mother's age and infant's birth weight we have shown at the very beginning, and in fact that mother and her baby is greatly influencing our analysis! By using geom_smooth() to suggest a linear relationship we can easily notice this impact:
+
+```{r detecting_outliers}
+ggplot(birthwt, aes(x=mother.age, y=birthwt.grams)) +
+  geom_point(alpha=0.7, size=2.5, color="pink") +
+  labs(x="age of the mother", y="infant's birth weight", title="Relationship Between Mother's Age and Infant's Birth Weight") +
+  geom_smooth(formula="y~x", color="steelblue") +
+  theme_bw()
+```
+
+In order to remove the effect of the outlier data, we use filter() to remove those data points which has the mother's age over 40(we loop back to our data cleaning process!), and then we try our linear model again:
+
+```{r linear_model_with_outlier_removed}
+linear.model.3 <- lm(birthwt.grams ~ mother.age, filter(birthwt, mother.age < 40))
+summary(linear.model.3)
+```
+
+We found that the p-value for predictor variable "age" is now significantly large, which further suggests the poor estimation of this variable.
+
+## A more complex linear model
+
+What if we combine smoking habit and age together to predict infant's birth weight?
+
+```{r complex_multivariable_lm}
+linear.model.3a <- lm(birthwt.grams ~ + mother.age + mother.smokes, filter(birthwt, mother.age < 40))
+summary(linear.model.3a)
+```
+
+Our conclusion seems just the same: age is a poor predictor, and smoking habit can explain a certain proportion of the variance of birth weight.
+
+Try making it more complex...
+
+```{r a_more_complex_lm}
+linear.model.3b <- lm(birthwt.grams ~ + mother.age + mother.smokes + race, filter(birthwt, mother.age < 40))
+summary(linear.model.3b)
+```
+
+*Notice: How do we perform linear regression on a categorical variable like "race"? In R, it uses a technique called "dummy coding(indicator coding)", which automatically chooses one of the categories to be the **baseline**, i.e. the reference level, and the coefficient of other categories represents the difference in the outcome variable compared to this baseline, while holding other variable constant. In this case above, race="White" is set to be the baseline.*
+
+(why don't we just throw all the predictors into the linear function..?)
+
+```{r oh_my_goodness}
+birthwt |>
+  filter(mother.age < 40) |>
+  dplyr::select(!birthwt.below.2500) -> new_birthwt
+linear.model.3c <- lm(birthwt.grams ~ . , new_birthwt)
+summary(linear.model.3c)
+```
+
+*Notice: We have to removed column "birthwt.below.2500" in the first place since it's a variable which directly linked to our outcome variable!!*
+
+# Generalized Linear Models
+
+In practical contexts, such as medical and health, the **exact weight** of a baby(e.g., 2700g vs. 2800g) might be less critical than **whether the weight falls below a clinically significant threshold**. That threshold is 2500 grams (5.5 pounds), which is defined by the World Health Organization (WHO) as the cutoff for low birth weight (LBW). Babies born under this threshold are at greater risk for complications. Thus, rather than modeling birth weight as a numeric variable, it often makes more sense to frame the problem as a **binary classification task**: *"Is the baby's birth weight below 2500 grams? -\>Yes(1)/No(0)"*
+
+Thus, simple linear models do not suit our needs, as it might produce a prediction that is greater than 1 or lower than 0, which does not make sense for probability estimation. That's the reason why we want to introduce **generalized linear model (GLM)**, which is well-suited to *binary outcomes*.
+```{r generalized_linear_model}
+glm.0 <- glm(birthwt.below.2500 ~ . - birthwt.grams, data=filter(birthwt, mother.age < 40), family=binomial())
+summary(glm.0)
+```
