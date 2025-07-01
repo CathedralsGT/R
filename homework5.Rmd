@@ -1,0 +1,90 @@
+---
+title: "homework5"
+author: "Qiyao Jiang"
+date: "2025-07-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Homework 5
+
+## 1.
+
+```{r}
+percentile_ratio_discrepancies <- function(P99, P99.5, P99.9, a) {
+  result <- ((P99/P99.9)^(-a+1) - 10)^2 + ((P99.5/P99.9)^(-a+1) - 5)^2 + ((P99/P99.5)^(-a+1) - 2)^2
+  return(result)
+}
+percentile_ratio_discrepancies(P99=1e6, P99.5=2e6, P99.9=1e7, a=2)
+```
+
+## 2
+
+```{r}
+exponent.multi_ratios_est <- function(P99, P99.5, P99.9){
+  a <- 1 - log(10)/(log(P99/P99.9))
+  
+  deriv_step <- 1e-4
+  max_iter <- 200
+  threshold <- 1e-3
+  iteration <- 0
+  step.scale <- 0.01
+  for(iteration in 0:max_iter) {
+    iteration <- iteration + 1
+    deriv <- (percentile_ratio_discrepancies(P99, P99.5, P99.9, a+deriv_step) -   percentile_ratio_discrepancies(P99, P99.5, P99.9, a))/deriv_step
+    if(deriv<threshold){break}
+    a <- a - deriv*step.scale
+  }
+  
+  return(a)
+}
+exponent.multi_ratios_est(P99=1e6, P99.5=2e6, P99.9=1e7)
+```
+## 3
+```{r}
+library(tidyverse)
+wid <- read_csv("data/wtid-report.csv")
+dim(wid)
+head(wid, 20)
+```
+we first check if there's any value missing:
+```{r}
+any(is.na(wid$"P99 income threshold"))
+any(is.na(wid$"P99.5 income threshold"))
+any(is.na(wid$"P99.9 income threshold"))
+```
+Good, no NAs, move on to the plotting process
+```{r}
+mutate(wid, a = 0) -> wid
+for (i in 1:nrow(wid)) {
+  wid$a[i] <- exponent.multi_ratios_est(P99=wid$`P99 income threshold`[i], P99.5=wid$`P99.5 income threshold`[i], P99.9=wid$`P99.9 income threshold`[i])
+}
+ggplot(wid, aes(x=Year, y=a)) +
+  geom_point(alpha=1, size=2.5, color="pink") +
+  geom_line(linewidth=0.75, color="steelblue") +
+  labs(x="Year", y="Pareto exponent a", title="Evolution of the Pareto Exponent over time in the United States") +
+  theme_bw()
+```
+##  4
+```{r}
+mutate(wid, a_rough = 0) -> wid
+for (i in 1:nrow(wid)) {
+  P99 <- wid$`P99 income threshold`[i]
+  P99.9 <- wid$`P99.9 income threshold`[i]
+  wid$a_rough[i] <- 1 - log(10)/(log(P99/P99.9))
+}
+wid |>
+  pivot_longer(
+    cols = c("a", "a_rough"),
+    names_to = "estimate_type",
+    values_to = "a"
+  ) -> wid
+
+ggplot(wid, aes(x=Year, y=a, color=estimate_type)) +
+  geom_point(alpha=0.7, size=1.5) +
+  labs(x="Year", y="Pareto exponent a", title="Evolution of the Pareto Exponent over time in the United States", color="estimate type") +
+  theme_bw()
+```
